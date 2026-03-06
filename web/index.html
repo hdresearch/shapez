@@ -142,6 +142,27 @@
             box-shadow: 0 0 20px rgba(233, 69, 96, 0.3);
         }
         
+        .block.block-running {
+            border-color: #ffc107;
+            box-shadow: 0 0 20px rgba(255, 193, 7, 0.4);
+            animation: pulse 1s infinite;
+        }
+        
+        .block.block-completed {
+            border-color: #4caf50;
+            box-shadow: 0 0 15px rgba(76, 175, 80, 0.3);
+        }
+        
+        .block.block-error {
+            border-color: #f44336;
+            box-shadow: 0 0 20px rgba(244, 67, 54, 0.4);
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
         .block-header {
             padding: 10px 15px;
             background: #0f3460;
@@ -460,11 +481,186 @@
             router: { name: 'Router', color: '#E67E22', inputs: ['data'], outputs: ['default'] },
         };
         
+        // WebSocket connection for real-time updates
+        let ws = null;
+        let wsReconnectTimer = null;
+        
+        function connectWebSocket() {
+            const wsPort = 8765;
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsHost = window.location.hostname || 'localhost';
+            const wsUrl = `${wsProtocol}//${wsHost}:${wsPort}`;
+            
+            try {
+                ws = new WebSocket(wsUrl);
+                
+                ws.onopen = () => {
+                    logEvent('system', '🔌 WebSocket connected');
+                    document.getElementById('status').textContent = 'Connected';
+                    document.getElementById('status').className = 'status-badge status-idle';
+                    if (wsReconnectTimer) {
+                        clearTimeout(wsReconnectTimer);
+                        wsReconnectTimer = null;
+                    }
+                };
+                
+                ws.onmessage = (event) => {
+                    try {
+                        const msg = JSON.parse(event.data);
+                        handleWebSocketMessage(msg);
+                    } catch (e) {
+                        console.error('WebSocket message parse error:', e);
+                    }
+                };
+                
+                ws.onclose = () => {
+                    logEvent('system', '🔌 WebSocket disconnected');
+                    document.getElementById('status').textContent = 'Disconnected';
+                    document.getElementById('status').className = 'status-badge status-error';
+                    // Attempt reconnect after 5s
+                    if (!wsReconnectTimer) {
+                        wsReconnectTimer = setTimeout(connectWebSocket, 5000);
+                    }
+                };
+                
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                };
+            } catch (e) {
+                console.error('WebSocket connection failed:', e);
+                // Retry after 5s
+                if (!wsReconnectTimer) {
+                    wsReconnectTimer = setTimeout(connectWebSocket, 5000);
+                }
+            }
+        }
+        
+        function handleWebSocketMessage(msg) {
+            switch (msg.type) {
+                case 'agent_event':
+                    handleAgentEvent(msg.payload);
+                    break;
+                case 'factory_update':
+                    handleFactoryUpdate(msg.payload);
+                    break;
+                case 'session_list':
+                    updateSessionList(msg.payload.sessions || []);
+                    break;
+                case 'pong':
+                    // Keep-alive response
+                    break;
+                case 'error':
+                    logEvent('error', 'Server error: ' + msg.payload.error);
+                    break;
+            }
+        }
+        
+        function handleAgentEvent(payload) {
+            const eventType = payload.event_type;
+            const toolName = payload.tool_name;
+            const args = payload.arguments;
+            const result = payload.result;
+            
+            if (eventType === 'tool_call') {
+                logEvent('tool-call', `🔧 ${toolName}: ${JSON.stringify(args).slice(0, 100)}`);
+                highlightActiveBlock(toolName);
+            } else if (eventType === 'tool_result') {
+                logEvent('tool-result', `✓ ${toolName}: ${result?.slice(0, 100) || 'done'}`);
+            } else if (eventType === 'user_message') {
+                logEvent('user', payload.content?.slice(0, 200) || '');
+            } else if (eventType === 'assistant_message') {
+                logEvent('assistant', payload.content?.slice(0, 200) || '');
+            }
+        }
+        
+        function handleFactoryUpdate(payload) {
+            const status = document.getElementById('status');
+            
+            switch (payload.status) {
+                case 'started':
+                    status.textContent = 'Running';
+                    status.className = 'status-badge status-running';
+                    logEvent('system', `🏭 Factory started: ${payload.factory_name}`);
+                    break;
+                case 'block_started':
+                    highlightBlock(payload.block_id, 'running');
+                    logEvent('tool-call', `▶ ${payload.block_name} (${payload.block_type})`);
+                    break;
+                case 'block_completed':
+                    highlightBlock(payload.block_id, 'completed');
+                    logEvent('tool-result', `✓ ${payload.block_name}: ${payload.result?.slice(0, 100) || 'done'}`);
+                    break;
+                case 'completed':
+                    status.textContent = 'Completed';
+                    status.className = 'status-badge status-idle';
+                    logEvent('system', '🏭 Factory completed');
+                    resetBlockHighlights();
+                    break;
+                case 'error':
+                    status.textContent = 'Error';
+                    status.className = 'status-badge status-error';
+                    logEvent('error', payload.error);
+                    resetBlockHighlights();
+                    break;
+                case 'cancelled':
+                    status.textContent = 'Cancelled';
+                    status.className = 'status-badge status-idle';
+                    logEvent('system', '🏭 Factory cancelled');
+                    resetBlockHighlights();
+                    break;
+            }
+        }
+        
+        function highlightBlock(blockId, state) {
+            const blockEl = document.querySelector(`[data-id="${blockId}"]`);
+            if (blockEl) {
+                blockEl.classList.remove('block-running', 'block-completed', 'block-error');
+                if (state === 'running') {
+                    blockEl.classList.add('block-running');
+                } else if (state === 'completed') {
+                    blockEl.classList.add('block-completed');
+                }
+            }
+        }
+        
+        function highlightActiveBlock(toolName) {
+            // Find blocks that use this tool
+            blocks.forEach(block => {
+                if (block.params?.tool_name === toolName || block.type === toolName) {
+                    highlightBlock(block.id, 'running');
+                    setTimeout(() => highlightBlock(block.id, 'completed'), 1000);
+                }
+            });
+        }
+        
+        function resetBlockHighlights() {
+            document.querySelectorAll('.block').forEach(el => {
+                el.classList.remove('block-running', 'block-completed', 'block-error');
+            });
+        }
+        
+        function updateSessionList(sessions) {
+            // Could update a session dropdown or list
+            console.log('Available sessions:', sessions);
+        }
+        
+        function subscribeToSession(sessionId) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'subscribe',
+                    payload: { session_id: sessionId }
+                }));
+            }
+        }
+        
         // Initialize
         function init() {
             setupDragAndDrop();
             loadFactoryList();
             logEvent('system', 'Shapez Factory UI initialized');
+            
+            // Connect to WebSocket bridge
+            setTimeout(connectWebSocket, 500);
         }
         
         // Drag and drop from palette
@@ -852,7 +1048,22 @@
             status.textContent = 'Running...';
             status.className = 'status-badge status-running';
             logEvent('system', 'Starting factory execution...');
+            resetBlockHighlights();
             
+            // Use WebSocket for real-time updates if connected
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'execute_factory',
+                    payload: {
+                        factory_json: JSON.stringify(factory),
+                        inputs: {}
+                    }
+                }));
+                // Updates will come via WebSocket messages
+                return;
+            }
+            
+            // Fallback to HTTP
             try {
                 const response = await fetch('/api/execute', {
                     method: 'POST',

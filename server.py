@@ -196,14 +196,53 @@ def observe_session(session_id):
         return jsonify({"error": str(e)}), 500
 
 
+# Global WebSocket bridge instance
+_ws_bridge = None
+
+
+def get_websocket_bridge():
+    """Get the WebSocket bridge instance (lazy init)."""
+    global _ws_bridge
+    return _ws_bridge
+
+
+@app.route('/api/ws-status', methods=['GET'])
+def ws_status():
+    """Check WebSocket bridge status."""
+    bridge = get_websocket_bridge()
+    if bridge and bridge._running:
+        return jsonify({
+            "status": "running",
+            "port": bridge.port,
+            "clients": len(bridge._clients),
+        })
+    return jsonify({"status": "not_running"})
+
+
 def main():
     parser = argparse.ArgumentParser(description="Shapez Web Server")
     parser.add_argument("--port", type=int, default=8080, help="Port to listen on")
     parser.add_argument("--host", default="::", help="Host to bind to")
+    parser.add_argument("--ws-port", type=int, default=8765, help="WebSocket port")
+    parser.add_argument("--no-websocket", action="store_true", help="Disable WebSocket bridge")
     args = parser.parse_args()
     
     print(f"🏭 Shapez Factory Server starting on http://{args.host}:{args.port}")
     print(f"   Factories directory: {FACTORIES_DIR}")
+    
+    # Start WebSocket bridge
+    global _ws_bridge
+    if not args.no_websocket:
+        try:
+            from bridge.websocket_bridge import WebSocketBridge, WEBSOCKETS_AVAILABLE
+            if WEBSOCKETS_AVAILABLE:
+                _ws_bridge = WebSocketBridge(host=args.host, port=args.ws_port)
+                _ws_bridge.start(blocking=False)
+                print(f"   WebSocket bridge on ws://{args.host}:{args.ws_port}")
+            else:
+                print("   WebSocket bridge disabled (websockets package not installed)")
+        except Exception as e:
+            print(f"   WebSocket bridge failed to start: {e}")
     
     app.run(host=args.host, port=args.port, debug=True)
 
