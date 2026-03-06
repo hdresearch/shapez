@@ -199,7 +199,7 @@ def observe_session(session_id):
 def main():
     parser = argparse.ArgumentParser(description="Shapez Web Server")
     parser.add_argument("--port", type=int, default=8080, help="Port to listen on")
-    parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
+    parser.add_argument("--host", default="::", help="Host to bind to")
     args = parser.parse_args()
     
     print(f"🏭 Shapez Factory Server starting on http://{args.host}:{args.port}")
