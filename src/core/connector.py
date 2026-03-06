@@ -175,22 +175,34 @@ class Connector:
         
         Returns list of target block IDs that received the value.
         """
-        updated_blocks = []
+        import logging
+        logger = logging.getLogger(__name__)
         
-        for conn in self.get_connections_from(source_port_id):
+        updated_blocks = []
+        conns = self.get_connections_from(source_port_id)
+        logger.info(f"propagate({source_port_id}): found {len(conns)} connections, _by_source keys={list(self._by_source.keys())}")
+        
+        for conn in conns:
             conn.active = True
             conn.last_value = value
             
             target_block = blocks.get(conn.target_block_id)
+            logger.info(f"  Looking for target_block_id={conn.target_block_id}, found={target_block is not None}, available_blocks={list(blocks.keys())}")
             if not target_block:
                 continue
             
             # Find the target port and set its value
+            # Match by port.id OR port.name since JSON may use either
+            found_port = False
             for port in target_block.inputs:
-                if port.id == conn.target_port_id:
+                if port.id == conn.target_port_id or port.name == conn.target_port_id:
                     port.value = value
                     updated_blocks.append(target_block.id)
+                    found_port = True
+                    logger.info(f"    Set port {port.name} (id={port.id}) to {str(value)[:50]}")
                     break
+            if not found_port:
+                logger.info(f"    Port {conn.target_port_id} not found in block inputs: {[p.name for p in target_block.inputs]}")
         
         return updated_blocks
     
@@ -261,12 +273,17 @@ class Connector:
     
     def load_from_list(self, data: List[Dict[str, Any]]) -> None:
         """Load connections from a serialized list."""
+        import logging
+        logger = logging.getLogger(__name__)
+        
         self.connections.clear()
         self._by_source.clear()
         self._by_target.clear()
         
+        logger.info(f"Loading {len(data)} connections")
         for conn_data in data:
             conn = Connection.from_dict(conn_data)
+            logger.info(f"  Connection {conn.id}: {conn.source_block_id}.{conn.source_port_id} -> {conn.target_block_id}.{conn.target_port_id}")
             self.connections[conn.id] = conn
             
             if conn.source_port_id not in self._by_source:
@@ -276,3 +293,5 @@ class Connector:
             if conn.target_port_id not in self._by_target:
                 self._by_target[conn.target_port_id] = []
             self._by_target[conn.target_port_id].append(conn.id)
+        
+        logger.info(f"  _by_source keys: {list(self._by_source.keys())}")

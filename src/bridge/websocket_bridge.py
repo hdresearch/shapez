@@ -178,6 +178,7 @@ class WebSocketBridge:
                 self._subscriptions[session_id].discard(websocket)
         
         elif msg.type == MessageType.EXECUTE_FACTORY:
+            logger.info(f"Received EXECUTE_FACTORY message")
             await self._execute_factory(websocket, msg.payload)
         
         elif msg.type == MessageType.STOP_EXECUTION:
@@ -187,17 +188,22 @@ class WebSocketBridge:
     
     async def _execute_factory(self, websocket, payload: Dict[str, Any]):
         """Execute a factory and stream updates."""
+        logger.info(f"_execute_factory called with payload keys: {payload.keys()}")
         factory_json = payload.get("factory_json", "{}")
         inputs = payload.get("inputs", {})
         execution_id = f"exec_{time.time_ns()}"
         
         async def run():
+            logger.info("run() coroutine started")
             try:
                 from core.factory import Factory
                 
+                logger.info(f"Loading factory from JSON ({len(factory_json)} chars)")
                 factory = Factory.from_json(factory_json)
+                logger.info(f"Factory loaded: {factory.name}, {len(factory.blocks)} blocks")
                 
                 # Send start event
+                logger.info("Sending factory started event")
                 await self._broadcast_to_client(websocket, WebSocketMessage(
                     type=MessageType.FACTORY_UPDATE,
                     payload={
@@ -206,6 +212,7 @@ class WebSocketBridge:
                         "factory_name": factory.name,
                     },
                 ))
+                logger.info("Sent factory started event")
                 
                 # Execute with progress callbacks
                 async def on_block_start(block):
@@ -228,17 +235,19 @@ class WebSocketBridge:
                             "status": "block_completed",
                             "block_id": block.id,
                             "block_name": block.name,
-                            "result": str(result)[:500] if result else None,
+                            "result": str(result)[:2000] if result else None,
                             "execution_time": block.execution_time,
                         },
                     ))
                 
+                logger.info(f"Calling factory.execute with inputs: {inputs}")
                 results = await factory.execute(
                     inputs=inputs,
                     agent=self._agent,
                     on_block_start=lambda b: asyncio.create_task(on_block_start(b)),
                     on_block_complete=lambda b, r: asyncio.create_task(on_block_complete(b, r)),
                 )
+                logger.info(f"Factory.execute completed with results: {results}")
                 
                 # Send completion
                 await self._broadcast_to_client(websocket, WebSocketMessage(
@@ -271,8 +280,10 @@ class WebSocketBridge:
             finally:
                 self._executions.pop(execution_id, None)
         
+        logger.info(f"Creating task for execution {execution_id}")
         task = asyncio.create_task(run())
         self._executions[execution_id] = task
+        logger.info(f"Task created: {task}")
     
     async def _send_session_list(self, websocket):
         """Send list of available sessions to client."""
@@ -366,7 +377,7 @@ class WebSocketBridge:
                     self.broadcast_agent_event(session_id, "tool_call", {
                         "tool_name": tool_name,
                         "arguments": args,
-                        "result": result[:500] if result else None,
+                        "result": result[:2000] if result else None,
                         "timestamp": time.time(),
                     }),
                     self._loop,

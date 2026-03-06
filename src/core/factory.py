@@ -10,11 +10,18 @@ A factory defines a complete agent workflow consisting of:
 import asyncio
 import json
 import logging
+import sys
 import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
+
+# Ensure hermes-agent is in path for tool imports
+_hermes_root = Path(__file__).parent.parent.parent.parent
+if (_hermes_root / "model_tools.py").exists():
+    if str(_hermes_root) not in sys.path:
+        sys.path.insert(0, str(_hermes_root))
 
 from .block import Block, BlockType, create_tool_block, create_agent_block
 from .connector import Connector, Connection
@@ -242,14 +249,20 @@ class Factory:
         
         # Inject inputs
         if inputs:
+            logger.info(f"Injecting inputs: {inputs}")
             for block_name, value in inputs.items():
                 for block in self.blocks.values():
                     if block.name == block_name:
+                        logger.info(f"Found block {block.name}, setting outputs to {value}")
                         for port in block.outputs:
                             port.value = value
-                        # Propagate to connected blocks
+                            logger.info(f"  Set output port {port.name} (id={port.id}) = {value}")
+                        # Propagate to connected blocks using port name (JSON format)
                         for output in block.outputs:
-                            self.connector.propagate(output.id, value, self.blocks)
+                            # Try both port.id and port.name for compatibility
+                            updated1 = self.connector.propagate(output.id, value, self.blocks)
+                            updated2 = self.connector.propagate(output.name, value, self.blocks)
+                            logger.info(f"  Propagated via id={output.id}: {updated1}, via name={output.name}: {updated2}")
         
         # Get execution order
         execution_order = self.topological_sort()
@@ -266,7 +279,10 @@ class Factory:
                 
                 # Skip if not ready
                 if not block.is_ready():
+                    logger.info(f"Skipping block {block.name}: not ready. Inputs: {[(p.name, p.id, p.value, p.required) for p in block.inputs]}")
                     continue
+                
+                logger.info(f"Executing block {block.name}")
                 
                 # Execute block
                 await self._execute_block(block)
@@ -315,7 +331,9 @@ class Factory:
                 for output in block.outputs:
                     if output.name == "result" or len(block.outputs) == 1:
                         output.value = result
+                        # Propagate using both port.id and port.name for compatibility
                         self.connector.propagate(output.id, result, self.blocks)
+                        self.connector.propagate(output.name, result, self.blocks)
             
             if self._context.on_block_complete:
                 self._context.on_block_complete(block, result)
@@ -356,24 +374,34 @@ class Factory:
         tool_name = block.params.get("tool_name", "")
         tool_params = dict(block.params.get("tool_params", {}))
         
+        # Debug: log input state
+        logger.info(f"Tool block {block.name}: inputs = {[(inp.name, inp.id, inp.value) for inp in block.inputs]}")
+        
         # Inject input values into params
         for inp in block.inputs:
             if inp.value is not None:
-                tool_params[inp.name] = inp.value
+                # For terminal tool, the input becomes part of the command
+                if tool_name == "terminal" and inp.name == "input":
+                    existing_cmd = tool_params.get("command", "")
+                    tool_params["command"] = f"{existing_cmd} {inp.value}".strip()
+                else:
+                    tool_params[inp.name] = inp.value
         
-        if not self._agent:
-            return {"error": "No agent available for tool execution"}
+        logger.info(f"Tool block {block.name}: final tool_params = {tool_params}")
         
-        # Use Hermes tool handler
-        from model_tools import handle_function_call
-        
-        result = handle_function_call(
-            tool_name=tool_name,
-            args=tool_params,
-            task_id=f"factory_{self.id}_{block.id}",
-        )
-        
-        return result
+        # Use Hermes tool handler directly (doesn't require agent)
+        try:
+            from model_tools import handle_function_call
+            
+            result = handle_function_call(
+                function_name=tool_name,
+                function_args=tool_params,
+                task_id=f"factory_{self.id}_{block.id}",
+            )
+            
+            return result
+        except Exception as e:
+            return {"error": str(e)}
     
     async def _execute_agent_block(self, block: Block) -> Any:
         """Execute a sub-agent block."""
@@ -390,27 +418,36 @@ class Factory:
         if not prompt_input:
             return {"error": "No prompt input provided"}
         
-        if not self._agent:
-            return {"error": "No parent agent available"}
-        
-        # Create sub-agent
-        from run_agent import AIAgent
-        
-        sub_agent = AIAgent(
-            model=model or self._agent.model,
-            base_url=self._agent.base_url,
-            api_key=self._agent._client_kwargs.get("api_key"),
-            enabled_toolsets=tools if tools else None,
-            max_iterations=20,
-            quiet_mode=True,
-        )
-        
-        response = sub_agent.run_conversation(
-            user_message=prompt_input,
-            system_message=system_prompt,
-        )
-        
-        return response
+        try:
+            from run_agent import AIAgent
+            
+            # Create agent - use parent's settings if available, otherwise defaults
+            if self._agent:
+                sub_agent = AIAgent(
+                    model=model or self._agent.model,
+                    base_url=self._agent.base_url,
+                    api_key=self._agent._client_kwargs.get("api_key"),
+                    enabled_toolsets=tools if tools else None,
+                    max_iterations=20,
+                    quiet_mode=True,
+                )
+            else:
+                # Create standalone agent with defaults
+                sub_agent = AIAgent(
+                    model=model,  # Will use default from config
+                    enabled_toolsets=tools if tools else None,
+                    max_iterations=20,
+                    quiet_mode=True,
+                )
+            
+            response = sub_agent.chat(
+                user_message=prompt_input,
+                system_message=system_prompt,
+            )
+            
+            return response
+        except Exception as e:
+            return {"error": str(e)}
     
     def _execute_prompt_block(self, block: Block) -> str:
         """Execute a prompt template block."""

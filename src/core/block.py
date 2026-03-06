@@ -224,17 +224,23 @@ class Block:
         
         # Add ports
         for inp in data.get("inputs", []):
-            block.add_input(
+            port = block.add_input(
                 name=inp.get("name", "input"),
                 data_type=inp.get("data_type", "any"),
                 required=inp.get("required", True),
             )
+            # Preserve ID from JSON if provided
+            if "id" in inp:
+                port.id = inp["id"]
         
         for out in data.get("outputs", []):
-            block.add_output(
+            port = block.add_output(
                 name=out.get("name", "output"),
                 data_type=out.get("data_type", "any"),
             )
+            # Preserve ID from JSON if provided  
+            if "id" in out:
+                port.id = out["id"]
         
         # Apply config
         config = data.get("config", {})

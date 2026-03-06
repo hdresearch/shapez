@@ -68,6 +68,37 @@ def list_factories():
     return jsonify({"factories": factories})
 
 
+# Lazy-loaded AIAgent for factory execution
+_hermes_agent = None
+
+
+def _get_or_create_agent():
+    """Get or create a Hermes AIAgent for factory execution."""
+    global _hermes_agent
+    if _hermes_agent is not None:
+        return _hermes_agent
+    
+    # Try to import and create agent
+    try:
+        # Add hermes-agent to path if running from shapez submodule
+        hermes_path = Path(__file__).parent.parent
+        if (hermes_path / "run_agent.py").exists():
+            sys.path.insert(0, str(hermes_path))
+        
+        from run_agent import AIAgent
+        
+        # Create agent with default settings
+        _hermes_agent = AIAgent(
+            max_iterations=20,
+            quiet_mode=True,
+        )
+        logger.info("Created Hermes AIAgent for factory execution")
+        return _hermes_agent
+    except Exception as e:
+        logger.warning(f"Could not create Hermes agent: {e}")
+        return None
+
+
 @app.route('/api/execute', methods=['POST'])
 def execute_factory():
     """Execute a factory."""
@@ -82,11 +113,14 @@ def execute_factory():
         
         factory = Factory.from_json(factory_json)
         
+        # Get agent for execution (needed for agent/tool blocks)
+        agent = _get_or_create_agent()
+        
         # Run in event loop
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            results = loop.run_until_complete(factory.execute(inputs=inputs))
+            results = loop.run_until_complete(factory.execute(inputs=inputs, agent=agent))
         finally:
             loop.close()
         
@@ -244,7 +278,7 @@ def main():
         except Exception as e:
             print(f"   WebSocket bridge failed to start: {e}")
     
-    app.run(host=args.host, port=args.port, debug=True)
+    app.run(host=args.host, port=args.port, debug=False)
 
 
 if __name__ == "__main__":
