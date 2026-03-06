@@ -1,0 +1,164 @@
+{
+  "id": "research_workflow",
+  "name": "Research Workflow",
+  "description": "Search the web and summarize findings using a sub-agent",
+  "blocks": [
+    {
+      "id": "input_query",
+      "name": "Search Query",
+      "type": "input",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "input_query_out_0",
+          "name": "query",
+          "data_type": "string"
+        }
+      ],
+      "params": {},
+      "config": {
+        "x": 50,
+        "y": 100,
+        "width": 120,
+        "height": 50,
+        "color": "#3498DB"
+      }
+    },
+    {
+      "id": "web_search",
+      "name": "Web Search",
+      "type": "tool",
+      "inputs": [
+        {
+          "id": "web_search_in_0",
+          "name": "query",
+          "data_type": "string",
+          "required": true
+        }
+      ],
+      "outputs": [
+        {
+          "id": "web_search_out_0",
+          "name": "result",
+          "data_type": "any"
+        }
+      ],
+      "params": {
+        "tool_name": "web_search",
+        "tool_params": {
+          "max_results": 5
+        }
+      },
+      "config": {
+        "x": 220,
+        "y": 100,
+        "width": 140,
+        "height": 60,
+        "color": "#4A90D9"
+      }
+    },
+    {
+      "id": "summarizer",
+      "name": "Summarizer Agent",
+      "type": "agent",
+      "inputs": [
+        {
+          "id": "summarizer_in_0",
+          "name": "prompt",
+          "data_type": "string",
+          "required": true
+        },
+        {
+          "id": "summarizer_in_1",
+          "name": "context",
+          "data_type": "any",
+          "required": false
+        }
+      ],
+      "outputs": [
+        {
+          "id": "summarizer_out_0",
+          "name": "response",
+          "data_type": "string"
+        }
+      ],
+      "params": {
+        "system_prompt": "You are a research summarizer. Given web search results, create a concise summary highlighting the key points.",
+        "enabled_tools": []
+      },
+      "config": {
+        "x": 410,
+        "y": 100,
+        "width": 160,
+        "height": 80,
+        "color": "#9B59B6"
+      }
+    },
+    {
+      "id": "output_summary",
+      "name": "Summary Output",
+      "type": "output",
+      "inputs": [
+        {
+          "id": "output_summary_in_0",
+          "name": "summary",
+          "data_type": "string",
+          "required": true
+        }
+      ],
+      "outputs": [],
+      "params": {},
+      "config": {
+        "x": 620,
+        "y": 100,
+        "width": 120,
+        "height": 50,
+        "color": "#27AE60"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "conn_query_to_search",
+      "source": {
+        "block": "input_query",
+        "port": "input_query_out_0"
+      },
+      "target": {
+        "block": "web_search",
+        "port": "web_search_in_0"
+      },
+      "waypoints": []
+    },
+    {
+      "id": "conn_search_to_summarizer",
+      "source": {
+        "block": "web_search",
+        "port": "web_search_out_0"
+      },
+      "target": {
+        "block": "summarizer",
+        "port": "summarizer_in_1"
+      },
+      "waypoints": []
+    },
+    {
+      "id": "conn_summarizer_to_output",
+      "source": {
+        "block": "summarizer",
+        "port": "summarizer_out_0"
+      },
+      "target": {
+        "block": "output_summary",
+        "port": "output_summary_in_0"
+      },
+      "waypoints": []
+    }
+  ],
+  "config": {
+    "max_iterations": 20,
+    "timeout_seconds": 120,
+    "parallel_execution": false,
+    "stop_on_error": false
+  }
+}
