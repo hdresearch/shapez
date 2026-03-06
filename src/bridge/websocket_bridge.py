@@ -185,6 +185,10 @@ class WebSocketBridge:
             execution_id = msg.payload.get("execution_id")
             if execution_id and execution_id in self._executions:
                 self._executions[execution_id].cancel()
+        
+        elif msg.type == "execute_tool":
+            # Handle tool execution request from shapez mod
+            await self._execute_tool(websocket, msg.payload)
     
     async def _execute_factory(self, websocket, payload: Dict[str, Any]):
         """Execute a factory and stream updates."""
@@ -284,6 +288,43 @@ class WebSocketBridge:
         task = asyncio.create_task(run())
         self._executions[execution_id] = task
         logger.info(f"Task created: {task}")
+    
+    async def _execute_tool(self, websocket, payload: Dict[str, Any]):
+        """Execute a single tool and return the result (for shapez mod)."""
+        entity_id = payload.get("entity_id", "")
+        tool_name = payload.get("tool_name", "")
+        tool_params = payload.get("tool_params", {})
+        
+        logger.info(f"Executing tool '{tool_name}' for entity {entity_id}")
+        
+        try:
+            from model_tools import handle_function_call
+            
+            result = handle_function_call(
+                function_name=tool_name,
+                function_args=tool_params,
+                task_id=f"shapez_{entity_id}",
+            )
+            
+            await websocket.send(WebSocketMessage(
+                type="tool_result",
+                payload={
+                    "entity_id": entity_id,
+                    "result": result,
+                    "success": True,
+                },
+            ).to_json())
+            
+        except Exception as e:
+            logger.exception(f"Tool execution error: {e}")
+            await websocket.send(WebSocketMessage(
+                type="tool_result",
+                payload={
+                    "entity_id": entity_id,
+                    "result": json.dumps({"error": str(e)}),
+                    "success": False,
+                },
+            ).to_json())
     
     async def _send_session_list(self, websocket):
         """Send list of available sessions to client."""
