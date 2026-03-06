@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shapez - Visual Agent Factory</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .header {
+            background: #16213e;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #0f3460;
+        }
+        
+        .header h1 {
+            font-size: 1.5rem;
+            color: #e94560;
+        }
+        
+        .header-actions {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary {
+            background: #e94560;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #ff6b6b;
+        }
+        
+        .btn-secondary {
+            background: #0f3460;
+            color: #eee;
+        }
+        
+        .btn-secondary:hover {
+            background: #1a4a7a;
+        }
+        
+        .main {
+            display: flex;
+            height: calc(100vh - 60px);
+        }
+        
+        .sidebar {
+            width: 250px;
+            background: #16213e;
+            border-right: 1px solid #0f3460;
+            padding: 15px;
+            overflow-y: auto;
+        }
+        
+        .sidebar h3 {
+            color: #e94560;
+            margin-bottom: 15px;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .block-palette {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .palette-block {
+            padding: 10px 15px;
+            background: #0f3460;
+            border-radius: 8px;
+            cursor: grab;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .palette-block:hover {
+            background: #1a4a7a;
+            transform: translateX(5px);
+        }
+        
+        .palette-block .icon {
+            font-size: 1.2rem;
+        }
+        
+        .canvas-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        #canvas {
+            width: 100%;
+            height: 100%;
+            background: 
+                linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        
+        .block {
+            position: absolute;
+            background: #16213e;
+            border: 2px solid #0f3460;
+            border-radius: 10px;
+            min-width: 140px;
+            cursor: move;
+            user-select: none;
+        }
+        
+        .block.selected {
+            border-color: #e94560;
+            box-shadow: 0 0 20px rgba(233, 69, 96, 0.3);
+        }
+        
+        .block-header {
+            padding: 10px 15px;
+            background: #0f3460;
+            border-radius: 8px 8px 0 0;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        
+        .block-body {
+            padding: 10px 15px;
+        }
+        
+        .port {
+            width: 12px;
+            height: 12px;
+            background: #e94560;
+            border-radius: 50%;
+            position: absolute;
+            cursor: crosshair;
+            transition: transform 0.2s;
+        }
+        
+        .port:hover {
+            transform: scale(1.3);
+        }
+        
+        .port.input {
+            left: -6px;
+        }
+        
+        .port.output {
+            right: -6px;
+        }
+        
+        .inspector {
+            width: 300px;
+            background: #16213e;
+            border-left: 1px solid #0f3460;
+            padding: 15px;
+            overflow-y: auto;
+        }
+        
+        .inspector h3 {
+            color: #e94560;
+            margin-bottom: 15px;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 0.85rem;
+            color: #aaa;
+        }
+        
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 8px 12px;
+            background: #0f3460;
+            border: 1px solid #1a4a7a;
+            border-radius: 6px;
+            color: #eee;
+            font-size: 0.9rem;
+        }
+        
+        .form-group textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+        
+        .event-log {
+            position: absolute;
+            bottom: 20px;
+            left: 270px;
+            right: 320px;
+            height: 150px;
+            background: rgba(22, 33, 62, 0.95);
+            border: 1px solid #0f3460;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        
+        .event-log-header {
+            padding: 8px 15px;
+            background: #0f3460;
+            font-size: 0.85rem;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .event-log-content {
+            padding: 10px 15px;
+            height: calc(100% - 35px);
+            overflow-y: auto;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 0.8rem;
+        }
+        
+        .event {
+            padding: 3px 0;
+            border-bottom: 1px solid #0f3460;
+        }
+        
+        .event.tool-call {
+            color: #4ecdc4;
+        }
+        
+        .event.tool-result {
+            color: #95e1d3;
+        }
+        
+        .event.message {
+            color: #f38181;
+        }
+        
+        .event.error {
+            color: #ff6b6b;
+        }
+        
+        svg.connections {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        
+        svg.connections path {
+            fill: none;
+            stroke: #e94560;
+            stroke-width: 2;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.75rem;
+            margin-left: 10px;
+        }
+        
+        .status-idle { background: #0f3460; }
+        .status-running { background: #27ae60; }
+        .status-error { background: #e74c3c; }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .modal.active {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: #16213e;
+            padding: 25px;
+            border-radius: 12px;
+            min-width: 400px;
+            max-width: 600px;
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .modal-header h2 {
+            color: #e94560;
+        }
+        
+        .modal-close {
+            background: none;
+            border: none;
+            color: #eee;
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🏭 Shapez Factory</h1>
+        <div class="header-actions">
+            <button class="btn btn-secondary" onclick="loadFactory()">📂 Load</button>
+            <button class="btn btn-secondary" onclick="saveFactory()">💾 Save</button>
+            <button class="btn btn-primary" onclick="runFactory()">▶ Run</button>
+            <span class="status-badge status-idle" id="status">Idle</span>
+        </div>
+    </div>
+    
+    <div class="main">
+        <div class="sidebar">
+            <h3>Blocks</h3>
+            <div class="block-palette">
+                <div class="palette-block" draggable="true" data-type="input">
+                    <span class="icon">📥</span>
+                    <span>Input</span>
+                </div>
+                <div class="palette-block" draggable="true" data-type="output">
+                    <span class="icon">📤</span>
+                    <span>Output</span>
+                </div>
+                <div class="palette-block" draggable="true" data-type="tool">
+                    <span class="icon">🔧</span>
+                    <span>Tool</span>
+                </div>
+                <div class="palette-block" draggable="true" data-type="agent">
+                    <span class="icon">🤖</span>
+                    <span>Agent</span>
+                </div>
+                <div class="palette-block" draggable="true" data-type="prompt">
+                    <span class="icon">📝</span>
+                    <span>Prompt</span>
+                </div>
+                <div class="palette-block" draggable="true" data-type="router">
+                    <span class="icon">🔀</span>
+                    <span>Router</span>
+                </div>
+            </div>
+            
+            <h3 style="margin-top: 25px;">Factories</h3>
+            <div id="factory-list"></div>
+        </div>
+        
+        <div class="canvas-container">
+            <svg class="connections" id="connections"></svg>
+            <div id="canvas"></div>
+            
+            <div class="event-log">
+                <div class="event-log-header">
+                    <span>📋 Event Log</span>
+                    <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.75rem;" onclick="clearLog()">Clear</button>
+                </div>
+                <div class="event-log-content" id="event-log"></div>
+            </div>
+        </div>
+        
+        <div class="inspector">
+            <h3>Inspector</h3>
+            <div id="inspector-content">
+                <p style="color: #666;">Select a block to edit its properties</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Load Factory Modal -->
+    <div class="modal" id="load-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Load Factory</h2>
+                <button class="modal-close" onclick="closeModal('load-modal')">&times;</button>
+            </div>
+            <div class="form-group">
+                <label>Paste Factory JSON:</label>
+                <textarea id="load-json" placeholder='{"name": "My Factory", ...}'></textarea>
+            </div>
+            <button class="btn btn-primary" onclick="doLoadFactory()">Load</button>
+        </div>
+    </div>
+    
+    <!-- Save Factory Modal -->
+    <div class="modal" id="save-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Save Factory</h2>
+                <button class="modal-close" onclick="closeModal('save-modal')">&times;</button>
+            </div>
+            <div class="form-group">
+                <label>Factory JSON:</label>
+                <textarea id="save-json" readonly></textarea>
+            </div>
+            <button class="btn btn-secondary" onclick="copyToClipboard()">📋 Copy to Clipboard</button>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let blocks = [];
+        let connections = [];
+        let selectedBlock = null;
+        let blockIdCounter = 0;
+        let draggingBlock = null;
+        let dragOffset = { x: 0, y: 0 };
+        let connectingFrom = null;
+        
+        const canvas = document.getElementById('canvas');
+        const connectionsLayer = document.getElementById('connections');
+        
+        // Block type configurations
+        const blockTypes = {
+            input: { name: 'Input', color: '#3498DB', inputs: [], outputs: ['value'] },
+            output: { name: 'Output', color: '#27AE60', inputs: ['result'], outputs: [] },
+            tool: { name: 'Tool', color: '#4A90D9', inputs: ['input'], outputs: ['result', 'error'] },
+            agent: { name: 'Agent', color: '#9B59B6', inputs: ['prompt', 'context'], outputs: ['response'] },
+            prompt: { name: 'Prompt', color: '#27AE60', inputs: [], outputs: ['formatted'] },
+            router: { name: 'Router', color: '#E67E22', inputs: ['data'], outputs: ['default'] },
+        };
+        
+        // Initialize
+        function init() {
+            setupDragAndDrop();
+            loadFactoryList();
+            logEvent('system', 'Shapez Factory UI initialized');
+        }
+        
+        // Drag and drop from palette
+        function setupDragAndDrop() {
+            document.querySelectorAll('.palette-block').forEach(el => {
+                el.addEventListener('dragstart', (e) => {
+                    e.dataTransfer.setData('blockType', e.target.dataset.type);
+                });
+            });
+            
+            canvas.addEventListener('dragover', (e) => {
+                e.preventDefault();
+            });
+            
+            canvas.addEventListener('drop', (e) => {
+                e.preventDefault();
+                const type = e.dataTransfer.getData('blockType');
+                if (type) {
+                    const rect = canvas.getBoundingClientRect();
+                    createBlock(type, e.clientX - rect.left - 70, e.clientY - rect.top - 30);
+                }
+            });
+        }
+        
+        // Create a new block
+        function createBlock(type, x, y) {
+            const config = blockTypes[type];
+            const id = `block_${++blockIdCounter}`;
+            
+            const block = {
+                id,
+                type,
+                name: config.name,
+                x, y,
+                params: type === 'tool' ? { tool_name: 'terminal', tool_params: {} } : {},
+            };
+            
+            blocks.push(block);
+            renderBlock(block);
+            selectBlock(block);
+            logEvent('system', `Created ${config.name} block`);
+        }
+        
+        // Render a block
+        function renderBlock(block) {
+            const config = blockTypes[block.type];
+            const el = document.createElement('div');
+            el.className = 'block';
+            el.id = block.id;
+            el.style.left = `${block.x}px`;
+            el.style.top = `${block.y}px`;
+            el.style.borderColor = config.color;
+            
+            el.innerHTML = `
+                <div class="block-header" style="background: ${config.color}20; border-bottom: 1px solid ${config.color};">
+                    ${block.name}
+                </div>
+                <div class="block-body">
+                    ${config.inputs.map((inp, i) => `
+                        <div class="port input" style="top: ${40 + i * 25}px;" data-port="${inp}" data-dir="input"></div>
+                    `).join('')}
+                    ${config.outputs.map((out, i) => `
+                        <div class="port output" style="top: ${40 + i * 25}px;" data-port="${out}" data-dir="output"></div>
+                    `).join('')}
+                    <div style="color: #888; font-size: 0.8rem;">${block.type}</div>
+                </div>
+            `;
+            
+            // Block dragging
+            el.addEventListener('mousedown', (e) => {
+                if (e.target.classList.contains('port')) return;
+                draggingBlock = block;
+                dragOffset = { x: e.offsetX, y: e.offsetY };
+                selectBlock(block);
+            });
+            
+            // Port clicking for connections
+            el.querySelectorAll('.port').forEach(port => {
+                port.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    const dir = port.dataset.dir;
+                    const portName = port.dataset.port;
+                    
+                    if (dir === 'output') {
+                        connectingFrom = { blockId: block.id, port: portName };
+                        logEvent('system', `Connecting from ${block.name}.${portName}...`);
+                    }
+                });
+                
+                port.addEventListener('mouseup', (e) => {
+                    e.stopPropagation();
+                    const dir = port.dataset.dir;
+                    const portName = port.dataset.port;
+                    
+                    if (dir === 'input' && connectingFrom) {
+                        createConnection(connectingFrom.blockId, connectingFrom.port, block.id, portName);
+                        connectingFrom = null;
+                    }
+                });
+            });
+            
+            canvas.appendChild(el);
+        }
+        
+        // Mouse move for dragging
+        document.addEventListener('mousemove', (e) => {
+            if (draggingBlock) {
+                const rect = canvas.getBoundingClientRect();
+                draggingBlock.x = e.clientX - rect.left - dragOffset.x;
+                draggingBlock.y = e.clientY - rect.top - dragOffset.y;
+                
+                const el = document.getElementById(draggingBlock.id);
+                el.style.left = `${draggingBlock.x}px`;
+                el.style.top = `${draggingBlock.y}px`;
+                
+                renderConnections();
+            }
+        });
+        
+        document.addEventListener('mouseup', () => {
+            draggingBlock = null;
+            if (connectingFrom) {
+                connectingFrom = null;
+                logEvent('system', 'Connection cancelled');
+            }
+        });
+        
+        // Select block
+        function selectBlock(block) {
+            document.querySelectorAll('.block').forEach(el => el.classList.remove('selected'));
+            
+            selectedBlock = block;
+            const el = document.getElementById(block.id);
+            if (el) el.classList.add('selected');
+            
+            renderInspector(block);
+        }
+        
+        // Create connection
+        function createConnection(fromBlockId, fromPort, toBlockId, toPort) {
+            connections.push({
+                from: { block: fromBlockId, port: fromPort },
+                to: { block: toBlockId, port: toPort }
+            });
+            renderConnections();
+            logEvent('system', `Connected ${fromBlockId}.${fromPort} → ${toBlockId}.${toPort}`);
+        }
+        
+        // Render connections
+        function renderConnections() {
+            let svg = '';
+            
+            connections.forEach(conn => {
+                const fromBlock = blocks.find(b => b.id === conn.from.block);
+                const toBlock = blocks.find(b => b.id === conn.to.block);
+                
+                if (fromBlock && toBlock) {
+                    const fromEl = document.getElementById(fromBlock.id);
+                    const toEl = document.getElementById(toBlock.id);
+                    
+                    if (fromEl && toEl) {
+                        const fromX = fromBlock.x + fromEl.offsetWidth;
+                        const fromY = fromBlock.y + 50;
+                        const toX = toBlock.x;
+                        const toY = toBlock.y + 50;
+                        
+                        const midX = (fromX + toX) / 2;
+                        
+                        svg += `<path d="M ${fromX} ${fromY} C ${midX} ${fromY}, ${midX} ${toY}, ${toX} ${toY}" />`;
+                    }
+                }
+            });
+            
+            connectionsLayer.innerHTML = svg;
+        }
+        
+        // Render inspector
+        function renderInspector(block) {
+            const inspector = document.getElementById('inspector-content');
+            const config = blockTypes[block.type];
+            
+            let html = `
+                <div class="form-group">
+                    <label>Name</label>
+                    <input type="text" value="${block.name}" onchange="updateBlockName('${block.id}', this.value)">
+                </div>
+                <div class="form-group">
+                    <label>Type</label>
+                    <input type="text" value="${block.type}" readonly style="opacity: 0.6;">
+                </div>
+            `;
+            
+            if (block.type === 'tool') {
+                html += `
+                    <div class="form-group">
+                        <label>Tool Name</label>
+                        <select onchange="updateBlockParam('${block.id}', 'tool_name', this.value)">
+                            <option ${block.params.tool_name === 'terminal' ? 'selected' : ''}>terminal</option>
+                            <option ${block.params.tool_name === 'web_search' ? 'selected' : ''}>web_search</option>
+                            <option ${block.params.tool_name === 'web_extract' ? 'selected' : ''}>web_extract</option>
+                            <option ${block.params.tool_name === 'read_file' ? 'selected' : ''}>read_file</option>
+                            <option ${block.params.tool_name === 'write_file' ? 'selected' : ''}>write_file</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Parameters (JSON)</label>
+                        <textarea onchange="updateBlockParam('${block.id}', 'tool_params', JSON.parse(this.value))">${JSON.stringify(block.params.tool_params || {}, null, 2)}</textarea>
+                    </div>
+                `;
+            }
+            
+            if (block.type === 'agent') {
+                html += `
+                    <div class="form-group">
+                        <label>System Prompt</label>
+                        <textarea onchange="updateBlockParam('${block.id}', 'system_prompt', this.value)">${block.params.system_prompt || ''}</textarea>
+                    </div>
+                `;
+            }
+            
+            if (block.type === 'prompt') {
+                html += `
+                    <div class="form-group">
+                        <label>Template</label>
+                        <textarea onchange="updateBlockParam('${block.id}', 'template', this.value)">${block.params.template || ''}</textarea>
+                    </div>
+                `;
+            }
+            
+            html += `
+                <button class="btn btn-secondary" style="margin-top: 15px; width: 100%;" onclick="deleteBlock('${block.id}')">🗑️ Delete Block</button>
+            `;
+            
+            inspector.innerHTML = html;
+        }
+        
+        // Update block name
+        function updateBlockName(blockId, name) {
+            const block = blocks.find(b => b.id === blockId);
+            if (block) {
+                block.name = name;
+                document.querySelector(`#${blockId} .block-header`).textContent = name;
+            }
+        }
+        
+        // Update block param
+        function updateBlockParam(blockId, key, value) {
+            const block = blocks.find(b => b.id === blockId);
+            if (block) {
+                block.params[key] = value;
+            }
+        }
+        
+        // Delete block
+        function deleteBlock(blockId) {
+            blocks = blocks.filter(b => b.id !== blockId);
+            connections = connections.filter(c => c.from.block !== blockId && c.to.block !== blockId);
+            
+            const el = document.getElementById(blockId);
+            if (el) el.remove();
+            
+            renderConnections();
+            document.getElementById('inspector-content').innerHTML = '<p style="color: #666;">Select a block to edit its properties</p>';
+            logEvent('system', `Deleted block ${blockId}`);
+        }
+        
+        // Event logging
+        function logEvent(type, message) {
+            const log = document.getElementById('event-log');
+            const event = document.createElement('div');
+            event.className = `event ${type}`;
+            const time = new Date().toLocaleTimeString();
+            event.textContent = `[${time}] ${message}`;
+            log.appendChild(event);
+            log.scrollTop = log.scrollHeight;
+        }
+        
+        function clearLog() {
+            document.getElementById('event-log').innerHTML = '';
+        }
+        
+        // Factory operations
+        function getFactoryJSON() {
+            return {
+                id: `factory_${Date.now()}`,
+                name: 'My Factory',
+                description: '',
+                blocks: blocks.map(b => ({
+                    id: b.id,
+                    name: b.name,
+                    type: b.type,
+                    inputs: blockTypes[b.type].inputs.map((inp, i) => ({
+                        id: `${b.id}_in_${i}`,
+                        name: inp,
+                        data_type: 'any',
+                        required: true
+                    })),
+                    outputs: blockTypes[b.type].outputs.map((out, i) => ({
+                        id: `${b.id}_out_${i}`,
+                        name: out,
+                        data_type: 'any'
+                    })),
+                    params: b.params,
+                    config: { x: b.x, y: b.y, width: 140, height: 60 }
+                })),
+                connections: connections.map((c, i) => ({
+                    id: `conn_${i}`,
+                    source: { block: c.from.block, port: `${c.from.block}_out_0` },
+                    target: { block: c.to.block, port: `${c.to.block}_in_0` }
+                })),
+                config: {
+                    max_iterations: 100,
+                    timeout_seconds: 300,
+                    parallel_execution: false,
+                    stop_on_error: true
+                }
+            };
+        }
+        
+        function loadFactory() {
+            document.getElementById('load-modal').classList.add('active');
+        }
+        
+        function saveFactory() {
+            const json = JSON.stringify(getFactoryJSON(), null, 2);
+            document.getElementById('save-json').value = json;
+            document.getElementById('save-modal').classList.add('active');
+        }
+        
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('active');
+        }
+        
+        function doLoadFactory() {
+            try {
+                const json = document.getElementById('load-json').value;
+                const factory = JSON.parse(json);
+                
+                // Clear existing
+                blocks = [];
+                connections = [];
+                canvas.querySelectorAll('.block').forEach(el => el.remove());
+                
+                // Load blocks
+                factory.blocks.forEach(b => {
+                    const block = {
+                        id: b.id,
+                        type: b.type,
+                        name: b.name,
+                        x: b.config?.x || 100,
+                        y: b.config?.y || 100,
+                        params: b.params || {}
+                    };
+                    blocks.push(block);
+                    renderBlock(block);
+                });
+                
+                // Load connections
+                factory.connections.forEach(c => {
+                    connections.push({
+                        from: { block: c.source.block, port: c.source.port },
+                        to: { block: c.target.block, port: c.target.port }
+                    });
+                });
+                
+                renderConnections();
+                closeModal('load-modal');
+                logEvent('system', `Loaded factory: ${factory.name}`);
+            } catch (e) {
+                alert('Invalid JSON: ' + e.message);
+            }
+        }
+        
+        function copyToClipboard() {
+            const json = document.getElementById('save-json');
+            json.select();
+            document.execCommand('copy');
+            logEvent('system', 'Factory JSON copied to clipboard');
+        }
+        
+        async function runFactory() {
+            const factory = getFactoryJSON();
+            const status = document.getElementById('status');
+            
+            status.textContent = 'Running...';
+            status.className = 'status-badge status-running';
+            logEvent('system', 'Starting factory execution...');
+            
+            try {
+                const response = await fetch('/api/execute', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ factory_json: JSON.stringify(factory) })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    status.textContent = 'Completed';
+                    status.className = 'status-badge status-idle';
+                    logEvent('tool-result', 'Factory completed: ' + JSON.stringify(result.results));
+                } else {
+                    status.textContent = 'Error';
+                    status.className = 'status-badge status-error';
+                    logEvent('error', 'Factory error: ' + result.error);
+                }
+            } catch (e) {
+                status.textContent = 'Error';
+                status.className = 'status-badge status-error';
+                logEvent('error', 'Execution error: ' + e.message);
+            }
+        }
+        
+        function loadFactoryList() {
+            // This would fetch from the API
+            const list = document.getElementById('factory-list');
+            list.innerHTML = `
+                <div class="palette-block" onclick="loadSampleFactory('hello_world')">
+                    <span class="icon">📁</span>
+                    <span>hello_world</span>
+                </div>
+                <div class="palette-block" onclick="loadSampleFactory('research_workflow')">
+                    <span class="icon">📁</span>
+                    <span>research_workflow</span>
+                </div>
+            `;
+        }
+        
+        async function loadSampleFactory(name) {
+            try {
+                const response = await fetch(`/factories/${name}.json`);
+                const factory = await response.json();
+                document.getElementById('load-json').value = JSON.stringify(factory, null, 2);
+                document.getElementById('load-modal').classList.add('active');
+            } catch (e) {
+                logEvent('error', 'Failed to load factory: ' + e.message);
+            }
+        }
+        
+        // Initialize on load
+        init();
+    </script>
+</body>
+</html>
