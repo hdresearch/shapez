@@ -79,9 +79,21 @@ class WebSocketMessage:
     @classmethod
     def from_json(cls, data: str) -> "WebSocketMessage":
         obj = json.loads(data)
+        msg_type = obj.get("type", "")
+        
+        # Handle both nested payload format and flat format
+        # Nested: {"type": "x", "payload": {"key": "val"}}
+        # Flat: {"type": "x", "key": "val"}
+        if "payload" in obj:
+            payload = obj.get("payload", {})
+        else:
+            # Flat format - everything except type/timestamp/session_id is payload
+            payload = {k: v for k, v in obj.items() 
+                      if k not in ("type", "timestamp", "session_id")}
+        
         return cls(
-            type=obj.get("type", ""),
-            payload=obj.get("payload", {}),
+            type=msg_type,
+            payload=payload,
             timestamp=obj.get("timestamp", time.time()),
             session_id=obj.get("session_id"),
         )
@@ -139,9 +151,12 @@ class WebSocketBridge:
             
             async for message in websocket:
                 try:
+                    logger.info(f"Received message: {message[:200]}...")
                     msg = WebSocketMessage.from_json(message)
+                    logger.info(f"Parsed message type: {msg.type}")
                     await self._handle_message(websocket, msg)
                 except json.JSONDecodeError:
+                    logger.error(f"Invalid JSON: {message[:100]}")
                     await self._send_error(websocket, "Invalid JSON")
                 except Exception as e:
                     logger.exception(f"Error handling message: {e}")
@@ -189,6 +204,10 @@ class WebSocketBridge:
         elif msg.type == "execute_tool":
             # Handle tool execution request from shapez mod
             await self._execute_tool(websocket, msg.payload)
+        
+        elif msg.type == "ai_request":
+            # Handle AI request from shapez.io mod
+            await self._handle_ai_request(websocket, msg.payload)
     
     async def _execute_factory(self, websocket, payload: Dict[str, Any]):
         """Execute a factory and stream updates."""
@@ -325,6 +344,123 @@ class WebSocketBridge:
                     "success": False,
                 },
             ).to_json())
+    
+    async def _handle_ai_request(self, websocket, payload: Dict[str, Any]):
+        """Handle AI request from shapez.io mod."""
+        request_id = payload.get("request_id", "")
+        provider = payload.get("provider", "gemini")
+        prompt = payload.get("prompt", "")
+        
+        logger.info(f"AI request: provider={provider}, prompt={prompt[:50]}...")
+        
+        try:
+            logger.info(f"Calling {provider} API...")
+            if provider == "gemini":
+                response = await self._call_gemini(prompt)
+            elif provider == "anthropic":
+                response = await self._call_anthropic(prompt)
+            else:
+                response = f"Unknown provider: {provider}"
+            
+            logger.info(f"Got response from {provider}: {response[:100]}...")
+            
+            reply = json.dumps({
+                "type": "ai_response",
+                "request_id": request_id,
+                "provider": provider,
+                "response": response,
+            })
+            logger.info(f"Sending reply: {reply[:100]}...")
+            await websocket.send(reply)
+            logger.info("Reply sent!")
+            
+        except Exception as e:
+            logger.exception(f"AI request error: {e}")
+            await websocket.send(json.dumps({
+                "type": "error",
+                "request_id": request_id,
+                "message": str(e),
+            }))
+    
+    async def _call_gemini(self, prompt: str) -> str:
+        """Call Gemini AI via the gemini_search tool or direct API."""
+        import os
+        
+        api_key = os.environ.get("GOOGLE_API_KEY")
+        if not api_key:
+            return "Error: GOOGLE_API_KEY not set"
+        
+        try:
+            import httpx
+            
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+            
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    url,
+                    json={
+                        "contents": [{"parts": [{"text": prompt}]}],
+                        "generationConfig": {
+                            "temperature": 0.7,
+                            "maxOutputTokens": 1024,
+                        }
+                    }
+                )
+                response.raise_for_status()
+                data = response.json()
+                
+                # Extract text from response
+                candidates = data.get("candidates", [])
+                if candidates:
+                    content = candidates[0].get("content", {})
+                    parts = content.get("parts", [])
+                    if parts:
+                        return parts[0].get("text", "No response text")
+                
+                return "No response from Gemini"
+                
+        except Exception as e:
+            logger.exception(f"Gemini API error: {e}")
+            return f"Gemini error: {str(e)}"
+    
+    async def _call_anthropic(self, prompt: str) -> str:
+        """Call Anthropic Claude via direct API."""
+        import os
+        
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            return "Error: ANTHROPIC_API_KEY not set"
+        
+        try:
+            import httpx
+            
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "x-api-key": api_key,
+                        "anthropic-version": "2023-06-01",
+                        "content-type": "application/json",
+                    },
+                    json={
+                        "model": "claude-sonnet-4-20250514",
+                        "max_tokens": 1024,
+                        "messages": [{"role": "user", "content": prompt}],
+                    }
+                )
+                response.raise_for_status()
+                data = response.json()
+                
+                # Extract text from response
+                content = data.get("content", [])
+                if content:
+                    return content[0].get("text", "No response text")
+                
+                return "No response from Claude"
+                
+        except Exception as e:
+            logger.exception(f"Anthropic API error: {e}")
+            return f"Claude error: {str(e)}"
     
     async def _send_session_list(self, websocket):
         """Send list of available sessions to client."""
