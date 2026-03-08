@@ -489,34 +489,33 @@ class WebSocketBridge:
             if not api_key:
                 return f"Error: API key not configured for {provider}"
             
-            # Create a browser-focused agent
+            # Create a browser-focused agent using Playwright (Vers VM)
             agent = AIAgent(
                 model=model,
                 api_key=api_key,
                 base_url=base_url,
-                enabled_toolsets=["browser"],  # Only browser tools
+                enabled_toolsets=["playwright"],  # Playwright via Vers VM
                 max_iterations=10,
                 quiet_mode=True,
             )
             
             # Browser-specific system instruction - FORCE tool usage
-            browser_instruction = f"""You are a web browser automation agent. You MUST use your browser tools to get REAL, LIVE data from the web.
+            browser_instruction = f"""You are a web browser automation agent. You MUST use the playwright_browser tool to get REAL, LIVE data from the web.
 
 CRITICAL RULES:
-1. You MUST call browser_navigate to visit the actual website
-2. You MUST call browser_snapshot to see the real page content
-3. DO NOT make up or guess content - only report what you actually see
+1. You MUST call playwright_browser with action="navigate" and the URL
+2. The tool returns the actual page content - read it carefully
+3. DO NOT make up or guess content - only report what you actually see in the tool response
 4. Your final answer MUST start with "OUTPUT: "
 
-Example workflow:
-1. Call browser_navigate("https://news.ycombinator.com")
-2. Call browser_snapshot() to see the page
-3. Read the actual content from the snapshot
-4. Reply with "OUTPUT: The top post is [actual title from snapshot]"
+Example:
+1. Call playwright_browser(action="navigate", url="https://news.ycombinator.com")
+2. Read the returned content field
+3. Reply with "OUTPUT: The top post is [actual title from the content]"
 
-If you cannot access the page or tools fail, say "OUTPUT: Failed to access the page"
+If the tool fails, say "OUTPUT: Failed to access the page"
 
-DO NOT hallucinate or make up content. Only report what you actually see in browser_snapshot.
+DO NOT hallucinate. Only report what's in the playwright_browser response.
 
 Task: {prompt}"""
             
