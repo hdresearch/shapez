@@ -499,15 +499,24 @@ class WebSocketBridge:
                 quiet_mode=True,
             )
             
-            # Browser-specific system instruction
-            browser_instruction = f"""You are a web browser automation agent. You have browser tools to navigate and interact with web pages.
+            # Browser-specific system instruction - FORCE tool usage
+            browser_instruction = f"""You are a web browser automation agent. You MUST use your browser tools to get REAL, LIVE data from the web.
 
-IMPORTANT: Your final response MUST start with "OUTPUT: " followed by the direct answer.
+CRITICAL RULES:
+1. You MUST call browser_navigate to visit the actual website
+2. You MUST call browser_snapshot to see the real page content
+3. DO NOT make up or guess content - only report what you actually see
+4. Your final answer MUST start with "OUTPUT: "
 
-Example good response: "OUTPUT: The top post on Hacker News is 'Some Title' with 342 points"
-Example bad response: "I'll help you find..." or "Let me navigate to..."
+Example workflow:
+1. Call browser_navigate("https://news.ycombinator.com")
+2. Call browser_snapshot() to see the page
+3. Read the actual content from the snapshot
+4. Reply with "OUTPUT: The top post is [actual title from snapshot]"
 
-Use your browser tools to complete this task, then provide the result starting with OUTPUT:
+If you cannot access the page or tools fail, say "OUTPUT: Failed to access the page"
+
+DO NOT hallucinate or make up content. Only report what you actually see in browser_snapshot.
 
 Task: {prompt}"""
             
