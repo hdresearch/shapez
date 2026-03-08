@@ -208,6 +208,10 @@ class WebSocketBridge:
         elif msg.type == "ai_request":
             # Handle AI request from shapez.io mod
             await self._handle_ai_request(websocket, msg.payload)
+        
+        elif msg.type == "task_request":
+            # Handle task request from shapez.io mod (shape + color mode)
+            await self._handle_task_request(websocket, msg.payload)
     
     async def _execute_factory(self, websocket, payload: Dict[str, Any]):
         """Execute a factory and stream updates."""
@@ -381,6 +385,79 @@ class WebSocketBridge:
                 "request_id": request_id,
                 "message": str(e),
             }))
+    
+    async def _handle_task_request(self, websocket, payload: Dict[str, Any]):
+        """Handle task request from shapez.io mod with shape type and color mode."""
+        request_id = payload.get("request_id", "")
+        provider = payload.get("provider", "gemini")
+        color_mode = payload.get("color_mode", "")
+        task_type = payload.get("task_type", "circle")
+        backend = payload.get("backend", "local")
+        prompt = payload.get("prompt", "")
+        
+        logger.info(f"Task request: provider={provider}, color_mode={color_mode}, task_type={task_type}, backend={backend}")
+        logger.info(f"Prompt: {prompt[:100]}...")
+        
+        try:
+            # Notify task started
+            await websocket.send(json.dumps({
+                "type": "task_started",
+                "request_id": request_id,
+                "task_type": task_type,
+                "backend": backend,
+                "color_mode": color_mode,
+            }))
+            
+            # Route based on color mode (provider)
+            if provider == "local":
+                # Local execution - just call the AI directly
+                response = await self._call_anthropic(prompt)  # Default to Claude for local
+            elif provider == "cloud_code":
+                # Yellow mode - cloud code with pi agent
+                response = await self._spawn_cloud_code_agent(prompt, task_type)
+            elif provider == "gemini":
+                response = await self._call_gemini(prompt)
+            elif provider == "anthropic":
+                response = await self._call_anthropic(prompt)
+            else:
+                response = f"Unknown provider: {provider}"
+            
+            logger.info(f"Task response: {response[:100]}...")
+            
+            await websocket.send(json.dumps({
+                "type": "task_response",
+                "request_id": request_id,
+                "task_type": task_type,
+                "backend": backend,
+                "provider": provider,
+                "color_mode": color_mode,
+                "response": response,
+            }))
+            
+        except Exception as e:
+            logger.exception(f"Task request error: {e}")
+            await websocket.send(json.dumps({
+                "type": "error",
+                "request_id": request_id,
+                "message": str(e),
+            }))
+    
+    async def _spawn_cloud_code_agent(self, prompt: str, task_type: str) -> str:
+        """Spawn a Vers VM with pi agent for cloud code execution."""
+        import os
+        
+        # For now, just use the AI to respond
+        # In production, this would spawn a Vers VM with pi installed
+        
+        vers_api_key = os.environ.get("VERS_API_KEY")
+        if not vers_api_key:
+            # Fall back to AI response
+            logger.warning("VERS_API_KEY not set, using AI fallback")
+            return await self._call_anthropic(f"[Cloud Code Task - {task_type}]\n\n{prompt}")
+        
+        # TODO: Actually spawn Vers VM with pi
+        # For now, return a placeholder response
+        return f"[Cloud Code Agent] Would spawn Vers VM for: {prompt[:100]}..."
     
     async def _call_gemini(self, prompt: str) -> str:
         """Call Gemini AI via the gemini_search tool or direct API."""
