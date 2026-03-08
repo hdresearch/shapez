@@ -454,128 +454,222 @@ class WebSocketBridge:
             }))
     
     async def _handle_browser_task(self, prompt: str, provider: str) -> str:
-        """Handle browser automation task via Playwright in a Vers VM.
+        """Handle browser automation task by spawning a Hermes agent with browser tools.
         
-        Uses a singleton VM that stays warm for fast task execution.
-        Tasks are processed FIFO via the task queue.
+        The agent has access to real browser tools that execute Playwright commands.
         """
+        import asyncio
+        import sys
         import os
         
-        # Build a browser-specific prompt that tells the AI it has Playwright tools
-        browser_system_prompt = """You are a browser automation agent running inside a Vers VM with Playwright installed.
-
-You have access to the following Playwright tools:
-- page.goto(url) - Navigate to a URL
-- page.click(selector) - Click an element
-- page.fill(selector, text) - Fill a text input
-- page.screenshot(path) - Take a screenshot
-- page.content() - Get page HTML
-- page.evaluate(js) - Run JavaScript in the page
-- page.wait_for_selector(selector) - Wait for element to appear
-
-When executing browser tasks:
-1. Always start by navigating to the relevant URL
-2. Wait for elements to load before interacting
-3. Take screenshots to verify actions completed
-4. Return a summary of what was accomplished
-
-Current task:
-"""
-        full_prompt = browser_system_prompt + prompt
+        # Add hermes-agent to path
+        hermes_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        if hermes_path not in sys.path:
+            sys.path.insert(0, hermes_path)
         
-        # Use the AI provider to plan and execute the browser task
-        if provider == "gemini":
-            return await self._call_gemini(full_prompt)
-        else:
-            return await self._call_anthropic(full_prompt)
+        try:
+            from run_agent import AIAgent
+            
+            # Create a browser-focused agent
+            model = "anthropic/claude-sonnet-4-20250514" if provider == "anthropic" else "google/gemini-2.0-flash-001"
+            
+            agent = AIAgent(
+                model=model,
+                enabled_toolsets=["browser"],  # Only browser tools
+                max_iterations=10,
+                quiet_mode=True,
+            )
+            
+            # Browser-specific system instruction
+            browser_instruction = f"""You are a web browser automation agent. You have browser tools to navigate and interact with web pages.
+
+IMPORTANT: Your final response MUST start with "OUTPUT: " followed by the direct answer.
+
+Example good response: "OUTPUT: The top post on Hacker News is 'Some Title' with 342 points"
+Example bad response: "I'll help you find..." or "Let me navigate to..."
+
+Use your browser tools to complete this task, then provide the result starting with OUTPUT:
+
+Task: {prompt}"""
+            
+            # Run the agent
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: agent.chat(browser_instruction)
+            )
+            
+            # Extract just the OUTPUT part if present
+            if "OUTPUT:" in response:
+                output_start = response.index("OUTPUT:") + 7
+                return response[output_start:].strip()
+            
+            return response
+            
+        except ImportError as e:
+            logger.error(f"Failed to import AIAgent: {e}")
+            return f"Browser agent unavailable: {e}"
+        except Exception as e:
+            logger.exception(f"Browser task error: {e}")
+            return f"Browser task failed: {e}"
     
     async def _handle_imessage_task(self, prompt: str, provider: str) -> str:
-        """Handle iMessage task via local AppleScript.
+        """Handle iMessage task by spawning a Hermes agent with terminal tools.
         
-        Currently only read operations are supported.
+        Uses AppleScript via terminal to read iMessage data.
         """
-        imessage_system_prompt = """You are an iMessage agent with access to read iMessage conversations via AppleScript on macOS.
-
-Available tools (READ-ONLY for now):
-- Read recent messages from a contact
-- List recent conversations
-- Search messages by keyword
-
-You do NOT have permission to send messages yet.
-
-When handling iMessage tasks:
-1. Parse what information the user wants
-2. Explain what you would read from Messages.app
-3. Provide a simulated response based on the task
-
-Current task:
-"""
-        full_prompt = imessage_system_prompt + prompt
+        import asyncio
+        import sys
+        import os
         
-        if provider == "gemini":
-            return await self._call_gemini(full_prompt)
-        else:
-            return await self._call_anthropic(full_prompt)
+        hermes_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        if hermes_path not in sys.path:
+            sys.path.insert(0, hermes_path)
+        
+        try:
+            from run_agent import AIAgent
+            
+            model = "anthropic/claude-sonnet-4-20250514" if provider == "anthropic" else "google/gemini-2.0-flash-001"
+            
+            agent = AIAgent(
+                model=model,
+                enabled_toolsets=["terminal"],  # Terminal for AppleScript
+                max_iterations=5,
+                quiet_mode=True,
+            )
+            
+            imessage_instruction = f"""You are an iMessage agent on macOS. You can read iMessage data using AppleScript via the terminal.
+
+IMPORTANT: Your final response MUST start with "OUTPUT: " followed by the direct answer.
+
+To read messages, use osascript commands like:
+- osascript -e 'tell application "Messages" to get chats'
+- Query the Messages SQLite database at ~/Library/Messages/chat.db
+
+READ-ONLY: Do not send messages, only read existing data.
+
+Task: {prompt}"""
+            
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: agent.chat(imessage_instruction)
+            )
+            
+            if "OUTPUT:" in response:
+                output_start = response.index("OUTPUT:") + 7
+                return response[output_start:].strip()
+            
+            return response
+            
+        except Exception as e:
+            logger.exception(f"iMessage task error: {e}")
+            return f"iMessage task failed: {e}"
     
     async def _handle_github_task(self, prompt: str, provider: str) -> str:
-        """Handle GitHub admin task via Apple Container with GITHUB_API_KEY."""
+        """Handle GitHub admin task by spawning a Hermes agent with terminal + web tools.
+        
+        Uses gh CLI or GitHub API via terminal.
+        """
+        import asyncio
+        import sys
         import os
+        
+        hermes_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        if hermes_path not in sys.path:
+            sys.path.insert(0, hermes_path)
         
         github_token = os.environ.get("GITHUB_API_KEY") or os.environ.get("GITHUB_TOKEN")
         
-        github_system_prompt = f"""You are a GitHub administration agent running in an Apple Container.
+        try:
+            from run_agent import AIAgent
+            
+            model = "anthropic/claude-sonnet-4-20250514" if provider == "anthropic" else "google/gemini-2.0-flash-001"
+            
+            agent = AIAgent(
+                model=model,
+                enabled_toolsets=["terminal", "web"],  # Terminal for gh CLI, web for API
+                max_iterations=10,
+                quiet_mode=True,
+            )
+            
+            github_instruction = f"""You are a GitHub administration agent.
 
-{"✅ GITHUB_API_KEY is configured." if github_token else "⚠️ GITHUB_API_KEY is NOT set - operations will be simulated."}
+{"✅ GITHUB_TOKEN is available in the environment." if github_token else "⚠️ GITHUB_TOKEN is NOT set - authenticate with 'gh auth login' first."}
 
-Available GitHub operations:
-- List/create/close issues
-- List/review/merge pull requests
-- Manage labels and milestones
-- Check workflow runs
-- Manage repository settings
+Use the 'gh' CLI tool for GitHub operations:
+- gh issue list/create/close
+- gh pr list/view/merge
+- gh repo view
+- gh api for direct API calls
 
-When handling GitHub tasks:
-1. Parse the repository and action requested
-2. {"Execute the operation using the GitHub API" if github_token else "Explain what operation would be performed"}
-3. Return a summary of results
+IMPORTANT: Your final response MUST start with "OUTPUT: " followed by the direct answer.
 
-Current task:
-"""
-        full_prompt = github_system_prompt + prompt
-        
-        if provider == "gemini":
-            return await self._call_gemini(full_prompt)
-        else:
-            return await self._call_anthropic(full_prompt)
+Task: {prompt}"""
+            
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: agent.chat(github_instruction)
+            )
+            
+            if "OUTPUT:" in response:
+                output_start = response.index("OUTPUT:") + 7
+                return response[output_start:].strip()
+            
+            return response
+            
+        except Exception as e:
+            logger.exception(f"GitHub task error: {e}")
+            return f"GitHub task failed: {e}"
     
     async def _spawn_cloud_code_agent(self, prompt: str, task_type: str) -> str:
-        """Spawn a Vers VM with pi agent for cloud code execution."""
+        """Spawn a Hermes agent with full coding capabilities for cloud code execution."""
+        import asyncio
+        import sys
         import os
         
-        vers_api_key = os.environ.get("VERS_API_KEY")
+        hermes_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        if hermes_path not in sys.path:
+            sys.path.insert(0, hermes_path)
         
-        cloud_code_prompt = f"""You are a cloud coding agent running in a Vers VM with the 'pi' coding assistant installed.
+        try:
+            from run_agent import AIAgent
+            
+            # Use Claude for coding tasks
+            agent = AIAgent(
+                model="anthropic/claude-sonnet-4-20250514",
+                enabled_toolsets=["terminal", "web", "code"],  # Full coding toolset
+                max_iterations=15,
+                quiet_mode=True,
+            )
+            
+            cloud_code_instruction = f"""You are a cloud coding agent with full development capabilities.
 
-{"✅ VERS_API_KEY is configured - VM can be spawned." if vers_api_key else "⚠️ VERS_API_KEY is NOT set - operating in simulation mode."}
+You have access to:
+- Terminal for running commands
+- Web tools for research
+- Code execution for testing
 
-This is a full development environment with:
-- Python, Node.js, Go, Rust installed
-- Git for version control
-- pi coding agent for AI-assisted development
-- Full internet access for package installation
+IMPORTANT: Your final response MUST start with "OUTPUT: " followed by the direct answer or result.
 
-When handling cloud code tasks:
-1. Understand the coding task requested
-2. Plan the implementation approach
-3. {"Execute in the Vers VM" if vers_api_key else "Explain what code would be written"}
-4. Return results or code output
-
-Current task:
-"""
-        full_prompt = cloud_code_prompt + prompt
-        
-        # For now, use AI to respond (actual VM spawning TODO)
-        return await self._call_anthropic(full_prompt)
+Task: {prompt}"""
+            
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: agent.chat(cloud_code_instruction)
+            )
+            
+            if "OUTPUT:" in response:
+                output_start = response.index("OUTPUT:") + 7
+                return response[output_start:].strip()
+            
+            return response
+            
+        except Exception as e:
+            logger.exception(f"Cloud code task error: {e}")
+            return f"Cloud code task failed: {e}"
     
     async def _call_gemini(self, prompt: str) -> str:
         """Call Gemini AI via the gemini_search tool or direct API."""
