@@ -578,30 +578,34 @@ Task: {prompt}"""
             if not api_key:
                 return f"Error: API key not configured for {provider}"
             
-            # Use imessage toolset (read-only by default)
-            # To enable write: change to ["imessage", "imessage_write"] or ["imessage_full"]
+            # Use imessage_full toolset for read AND write access
             agent = AIAgent(
                 model=model,
                 api_key=api_key,
                 base_url=base_url,
-                enabled_toolsets=["imessage"],  # Read-only iMessage tools
+                enabled_toolsets=["imessage_full"],  # Full iMessage access (read + write)
                 max_iterations=5,
                 quiet_mode=True,
             )
             
-            imessage_instruction = f"""You are an iMessage agent on macOS. You have tools to read iMessage data.
+            imessage_instruction = f"""You are an iMessage agent on macOS. You have tools to read and send iMessages.
 
 IMPORTANT: Your final response MUST start with "OUTPUT: " followed by the direct answer.
 
 Available tools:
 - imessage_read: Read messages, list chats, search messages
+- imessage_send: Send a message to a recipient
 
 Actions for imessage_read:
 - list_chats: List recent conversations
 - read_messages: Read messages from a contact (requires 'contact' parameter)
 - search_messages: Search messages by text (requires 'search' parameter)
 
-You are in READ-ONLY mode. Do not attempt to send messages.
+For imessage_send:
+- recipient: Phone number or email (e.g., "+1234567890")
+- message: The text to send
+
+⚠️ Be careful with imessage_send - it sends REAL messages!
 
 Task: {prompt}"""
             
