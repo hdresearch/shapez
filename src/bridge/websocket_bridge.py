@@ -414,7 +414,11 @@ class WebSocketBridge:
             }))
             
             # Route based on task type AND provider
-            if task_type == "rect":
+            # Check for cloud_code (yellow) FIRST - it overrides shape-based routing
+            if provider == "cloud_code":
+                # Yellow mode - cloud code with full agent capabilities
+                response = await self._spawn_cloud_code_agent(prompt, task_type)
+            elif task_type == "rect":
                 # Square = Browser Automation via Playwright in Vers VM
                 response = await self._handle_browser_task(prompt, provider)
             elif task_type == "circle":
@@ -423,9 +427,6 @@ class WebSocketBridge:
             elif task_type == "star":
                 # Star = GitHub Admin via Apple Container
                 response = await self._handle_github_task(prompt, provider)
-            elif provider == "cloud_code":
-                # Yellow mode - cloud code with pi agent
-                response = await self._spawn_cloud_code_agent(prompt, task_type)
             elif provider == "gemini":
                 response = await self._call_gemini(prompt)
             elif provider == "anthropic":
