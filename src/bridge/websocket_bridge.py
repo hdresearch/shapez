@@ -658,24 +658,33 @@ Task: {prompt}"""
             if not api_key:
                 return f"Error: API key not configured for {provider}"
             
+            # Use dedicated GitHub toolset
             agent = AIAgent(
                 model=model,
                 api_key=api_key,
                 base_url=base_url,
-                enabled_toolsets=["terminal", "web"],  # Terminal for gh CLI, web for API
+                enabled_toolsets=["github"],  # GitHub tool via gh CLI
                 max_iterations=10,
                 quiet_mode=True,
             )
             
-            github_instruction = f"""You are a GitHub administration agent.
+            github_instruction = f"""You are a GitHub administration agent. You have the github_repo tool for repository operations.
 
-{"✅ GITHUB_TOKEN is available in the environment." if github_token else "⚠️ GITHUB_TOKEN is NOT set - authenticate with 'gh auth login' first."}
+{"✅ GITHUB_TOKEN is configured." if github_token else "⚠️ GITHUB_TOKEN is NOT set."}
 
-Use the 'gh' CLI tool for GitHub operations:
-- gh issue list/create/close
-- gh pr list/view/merge
-- gh repo view
-- gh api for direct API calls
+Default repository: hdresearch/not_a_calculator
+
+Available actions with github_repo tool:
+- view: View repository info
+- issues: List open issues
+- issue_create: Create a new issue (requires 'title', optional 'body')
+- issue_view: View issue details (requires 'number')
+- issue_close: Close an issue (requires 'number')
+- prs: List pull requests
+- pr_view: View PR details (requires 'number')
+- pr_merge: Merge a PR (requires 'number')
+- labels: List repository labels
+- label_create: Create a label
 
 IMPORTANT: Your final response MUST start with "OUTPUT: " followed by the direct answer.
 
