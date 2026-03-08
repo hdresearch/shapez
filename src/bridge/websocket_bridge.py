@@ -467,14 +467,33 @@ class WebSocketBridge:
         if hermes_path not in sys.path:
             sys.path.insert(0, hermes_path)
         
+        # Load environment variables
+        from dotenv import load_dotenv
+        env_path = os.path.expanduser("~/.hermes/.env")
+        if os.path.exists(env_path):
+            load_dotenv(env_path, override=True)
+        
         try:
             from run_agent import AIAgent
             
-            # Create a browser-focused agent
-            model = "anthropic/claude-sonnet-4-20250514" if provider == "anthropic" else "google/gemini-2.0-flash-001"
+            # Determine model and API key
+            if provider == "anthropic":
+                model = "anthropic/claude-sonnet-4-20250514"
+                api_key = os.environ.get("ANTHROPIC_API_KEY")
+                base_url = "https://api.anthropic.com/v1"
+            else:
+                model = "google/gemini-2.0-flash-001"
+                api_key = os.environ.get("OPENROUTER_API_KEY")
+                base_url = "https://openrouter.ai/api/v1"
             
+            if not api_key:
+                return f"Error: API key not configured for {provider}"
+            
+            # Create a browser-focused agent
             agent = AIAgent(
                 model=model,
+                api_key=api_key,
+                base_url=base_url,
                 enabled_toolsets=["browser"],  # Only browser tools
                 max_iterations=10,
                 quiet_mode=True,
@@ -498,6 +517,10 @@ Task: {prompt}"""
                 None,
                 lambda: agent.chat(browser_instruction)
             )
+            
+            # Handle None response
+            if response is None:
+                return "Browser task returned no response"
             
             # Extract just the OUTPUT part if present
             if "OUTPUT:" in response:
@@ -526,13 +549,30 @@ Task: {prompt}"""
         if hermes_path not in sys.path:
             sys.path.insert(0, hermes_path)
         
+        from dotenv import load_dotenv
+        env_path = os.path.expanduser("~/.hermes/.env")
+        if os.path.exists(env_path):
+            load_dotenv(env_path, override=True)
+        
         try:
             from run_agent import AIAgent
             
-            model = "anthropic/claude-sonnet-4-20250514" if provider == "anthropic" else "google/gemini-2.0-flash-001"
+            if provider == "anthropic":
+                model = "anthropic/claude-sonnet-4-20250514"
+                api_key = os.environ.get("ANTHROPIC_API_KEY")
+                base_url = "https://api.anthropic.com/v1"
+            else:
+                model = "google/gemini-2.0-flash-001"
+                api_key = os.environ.get("OPENROUTER_API_KEY")
+                base_url = "https://openrouter.ai/api/v1"
+            
+            if not api_key:
+                return f"Error: API key not configured for {provider}"
             
             agent = AIAgent(
                 model=model,
+                api_key=api_key,
+                base_url=base_url,
                 enabled_toolsets=["terminal"],  # Terminal for AppleScript
                 max_iterations=5,
                 quiet_mode=True,
@@ -555,6 +595,9 @@ Task: {prompt}"""
                 None,
                 lambda: agent.chat(imessage_instruction)
             )
+            
+            if response is None:
+                return "iMessage task returned no response"
             
             if "OUTPUT:" in response:
                 output_start = response.index("OUTPUT:") + 7
@@ -579,15 +622,32 @@ Task: {prompt}"""
         if hermes_path not in sys.path:
             sys.path.insert(0, hermes_path)
         
+        from dotenv import load_dotenv
+        env_path = os.path.expanduser("~/.hermes/.env")
+        if os.path.exists(env_path):
+            load_dotenv(env_path, override=True)
+        
         github_token = os.environ.get("GITHUB_API_KEY") or os.environ.get("GITHUB_TOKEN")
         
         try:
             from run_agent import AIAgent
             
-            model = "anthropic/claude-sonnet-4-20250514" if provider == "anthropic" else "google/gemini-2.0-flash-001"
+            if provider == "anthropic":
+                model = "anthropic/claude-sonnet-4-20250514"
+                api_key = os.environ.get("ANTHROPIC_API_KEY")
+                base_url = "https://api.anthropic.com/v1"
+            else:
+                model = "google/gemini-2.0-flash-001"
+                api_key = os.environ.get("OPENROUTER_API_KEY")
+                base_url = "https://openrouter.ai/api/v1"
+            
+            if not api_key:
+                return f"Error: API key not configured for {provider}"
             
             agent = AIAgent(
                 model=model,
+                api_key=api_key,
+                base_url=base_url,
                 enabled_toolsets=["terminal", "web"],  # Terminal for gh CLI, web for API
                 max_iterations=10,
                 quiet_mode=True,
@@ -613,6 +673,9 @@ Task: {prompt}"""
                 lambda: agent.chat(github_instruction)
             )
             
+            if response is None:
+                return "GitHub task returned no response"
+            
             if "OUTPUT:" in response:
                 output_start = response.index("OUTPUT:") + 7
                 return response[output_start:].strip()
@@ -633,12 +696,23 @@ Task: {prompt}"""
         if hermes_path not in sys.path:
             sys.path.insert(0, hermes_path)
         
+        from dotenv import load_dotenv
+        env_path = os.path.expanduser("~/.hermes/.env")
+        if os.path.exists(env_path):
+            load_dotenv(env_path, override=True)
+        
         try:
             from run_agent import AIAgent
+            
+            api_key = os.environ.get("ANTHROPIC_API_KEY")
+            if not api_key:
+                return "Error: ANTHROPIC_API_KEY not configured"
             
             # Use Claude for coding tasks
             agent = AIAgent(
                 model="anthropic/claude-sonnet-4-20250514",
+                api_key=api_key,
+                base_url="https://api.anthropic.com/v1",
                 enabled_toolsets=["terminal", "web", "code"],  # Full coding toolset
                 max_iterations=15,
                 quiet_mode=True,
@@ -660,6 +734,9 @@ Task: {prompt}"""
                 None,
                 lambda: agent.chat(cloud_code_instruction)
             )
+            
+            if response is None:
+                return "Cloud code task returned no response"
             
             if "OUTPUT:" in response:
                 output_start = response.index("OUTPUT:") + 7
