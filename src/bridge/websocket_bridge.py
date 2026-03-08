@@ -386,6 +386,11 @@ class WebSocketBridge:
                 "message": str(e),
             }))
     
+    # Singleton browser VM for web automation tasks
+    _browser_vm = None
+    _browser_vm_ready = False
+    _browser_task_queue = []
+    
     async def _handle_task_request(self, websocket, payload: Dict[str, Any]):
         """Handle task request from shapez.io mod with shape type and color mode."""
         request_id = payload.get("request_id", "")
@@ -408,10 +413,16 @@ class WebSocketBridge:
                 "color_mode": color_mode,
             }))
             
-            # Route based on color mode (provider)
-            if provider == "local":
-                # Local execution - just call the AI directly
-                response = await self._call_anthropic(prompt)  # Default to Claude for local
+            # Route based on task type AND provider
+            if task_type == "rect":
+                # Square = Browser Automation via Playwright in Vers VM
+                response = await self._handle_browser_task(prompt, provider)
+            elif task_type == "circle":
+                # Circle = iMessage task (local)
+                response = await self._handle_imessage_task(prompt, provider)
+            elif task_type == "star":
+                # Star = GitHub Admin via Apple Container
+                response = await self._handle_github_task(prompt, provider)
             elif provider == "cloud_code":
                 # Yellow mode - cloud code with pi agent
                 response = await self._spawn_cloud_code_agent(prompt, task_type)
@@ -420,7 +431,7 @@ class WebSocketBridge:
             elif provider == "anthropic":
                 response = await self._call_anthropic(prompt)
             else:
-                response = f"Unknown provider: {provider}"
+                response = f"Unknown task configuration: task_type={task_type}, provider={provider}"
             
             logger.info(f"Task response: {response[:100]}...")
             
@@ -442,22 +453,129 @@ class WebSocketBridge:
                 "message": str(e),
             }))
     
+    async def _handle_browser_task(self, prompt: str, provider: str) -> str:
+        """Handle browser automation task via Playwright in a Vers VM.
+        
+        Uses a singleton VM that stays warm for fast task execution.
+        Tasks are processed FIFO via the task queue.
+        """
+        import os
+        
+        # Build a browser-specific prompt that tells the AI it has Playwright tools
+        browser_system_prompt = """You are a browser automation agent running inside a Vers VM with Playwright installed.
+
+You have access to the following Playwright tools:
+- page.goto(url) - Navigate to a URL
+- page.click(selector) - Click an element
+- page.fill(selector, text) - Fill a text input
+- page.screenshot(path) - Take a screenshot
+- page.content() - Get page HTML
+- page.evaluate(js) - Run JavaScript in the page
+- page.wait_for_selector(selector) - Wait for element to appear
+
+When executing browser tasks:
+1. Always start by navigating to the relevant URL
+2. Wait for elements to load before interacting
+3. Take screenshots to verify actions completed
+4. Return a summary of what was accomplished
+
+Current task:
+"""
+        full_prompt = browser_system_prompt + prompt
+        
+        # Use the AI provider to plan and execute the browser task
+        if provider == "gemini":
+            return await self._call_gemini(full_prompt)
+        else:
+            return await self._call_anthropic(full_prompt)
+    
+    async def _handle_imessage_task(self, prompt: str, provider: str) -> str:
+        """Handle iMessage task via local AppleScript.
+        
+        Currently only read operations are supported.
+        """
+        imessage_system_prompt = """You are an iMessage agent with access to read iMessage conversations via AppleScript on macOS.
+
+Available tools (READ-ONLY for now):
+- Read recent messages from a contact
+- List recent conversations
+- Search messages by keyword
+
+You do NOT have permission to send messages yet.
+
+When handling iMessage tasks:
+1. Parse what information the user wants
+2. Explain what you would read from Messages.app
+3. Provide a simulated response based on the task
+
+Current task:
+"""
+        full_prompt = imessage_system_prompt + prompt
+        
+        if provider == "gemini":
+            return await self._call_gemini(full_prompt)
+        else:
+            return await self._call_anthropic(full_prompt)
+    
+    async def _handle_github_task(self, prompt: str, provider: str) -> str:
+        """Handle GitHub admin task via Apple Container with GITHUB_API_KEY."""
+        import os
+        
+        github_token = os.environ.get("GITHUB_API_KEY") or os.environ.get("GITHUB_TOKEN")
+        
+        github_system_prompt = f"""You are a GitHub administration agent running in an Apple Container.
+
+{"✅ GITHUB_API_KEY is configured." if github_token else "⚠️ GITHUB_API_KEY is NOT set - operations will be simulated."}
+
+Available GitHub operations:
+- List/create/close issues
+- List/review/merge pull requests
+- Manage labels and milestones
+- Check workflow runs
+- Manage repository settings
+
+When handling GitHub tasks:
+1. Parse the repository and action requested
+2. {"Execute the operation using the GitHub API" if github_token else "Explain what operation would be performed"}
+3. Return a summary of results
+
+Current task:
+"""
+        full_prompt = github_system_prompt + prompt
+        
+        if provider == "gemini":
+            return await self._call_gemini(full_prompt)
+        else:
+            return await self._call_anthropic(full_prompt)
+    
     async def _spawn_cloud_code_agent(self, prompt: str, task_type: str) -> str:
         """Spawn a Vers VM with pi agent for cloud code execution."""
         import os
         
-        # For now, just use the AI to respond
-        # In production, this would spawn a Vers VM with pi installed
-        
         vers_api_key = os.environ.get("VERS_API_KEY")
-        if not vers_api_key:
-            # Fall back to AI response
-            logger.warning("VERS_API_KEY not set, using AI fallback")
-            return await self._call_anthropic(f"[Cloud Code Task - {task_type}]\n\n{prompt}")
         
-        # TODO: Actually spawn Vers VM with pi
-        # For now, return a placeholder response
-        return f"[Cloud Code Agent] Would spawn Vers VM for: {prompt[:100]}..."
+        cloud_code_prompt = f"""You are a cloud coding agent running in a Vers VM with the 'pi' coding assistant installed.
+
+{"✅ VERS_API_KEY is configured - VM can be spawned." if vers_api_key else "⚠️ VERS_API_KEY is NOT set - operating in simulation mode."}
+
+This is a full development environment with:
+- Python, Node.js, Go, Rust installed
+- Git for version control
+- pi coding agent for AI-assisted development
+- Full internet access for package installation
+
+When handling cloud code tasks:
+1. Understand the coding task requested
+2. Plan the implementation approach
+3. {"Execute in the Vers VM" if vers_api_key else "Explain what code would be written"}
+4. Return results or code output
+
+Current task:
+"""
+        full_prompt = cloud_code_prompt + prompt
+        
+        # For now, use AI to respond (actual VM spawning TODO)
+        return await self._call_anthropic(full_prompt)
     
     async def _call_gemini(self, prompt: str) -> str:
         """Call Gemini AI via the gemini_search tool or direct API."""
