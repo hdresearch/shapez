@@ -658,12 +658,13 @@ Task: {prompt}"""
             if not api_key:
                 return f"Error: API key not configured for {provider}"
             
-            # Use dedicated GitHub toolset
+            # Use GitHub toolset (Apple Container backend when available, falls back to local)
+            # TODO: Enable github_container when Apple Container service is running
             agent = AIAgent(
                 model=model,
                 api_key=api_key,
                 base_url=base_url,
-                enabled_toolsets=["github"],  # GitHub tool via gh CLI
+                enabled_toolsets=["github"],  # GitHub tool (falls back to local if container unavailable)
                 max_iterations=10,
                 quiet_mode=True,
             )
